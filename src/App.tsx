@@ -5,79 +5,88 @@ import { useState } from 'react';
 import usersFromServer from './api/users';
 import todosFromServer from './api/todos';
 import { Todos } from './types/Todos';
+import { Users } from './types/Users';
 import classNames from 'classnames';
 
-const todoInfos = todosFromServer.map(todo => {
-  const searchUser = usersFromServer.find(user => user.id === todo.userId);
+// 1. Helper function (DRY - Don't Repeat Yourself)
+// Гарантуємо, що завжди повертаємо об'єкт типу Users для TS
+const getTodoUser = (userId: number | undefined): Users => {
+  const searchUser = usersFromServer.find(user => user.id === userId);
 
   return {
-    ...todo,
-    user: {
-      id: searchUser?.id,
-      name: searchUser?.name,
-      username: searchUser?.username,
-      email: searchUser?.email,
-    },
+    id: searchUser?.id || 0,
+    name: searchUser?.name || '',
+    username: searchUser?.username || '',
+    email: searchUser?.email || '',
   };
-});
+};
+
+// Початкові дані
+const todoInfos = todosFromServer.map(todo => ({
+  ...todo,
+  user: getTodoUser(todo.userId),
+}));
 
 export const App = () => {
   const [title, setTitle] = useState('');
-  const [hasTitleError, setHasTitleError] = useState(false);
-  const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setTitle(event.target.value);
-    setHasTitleError(false);
-  };
+  // Зберігаємо текст помилки замість просто true/false
+  const [titleError, setTitleError] = useState('');
 
   const [userId, setUserId] = useState<number | null>(null);
   const [hasUserIdError, setHasUserIdError] = useState(false);
+
+  const [userTodo, setUserTodo] = useState<Todos[]>(todoInfos);
+
+  const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setTitle(event.target.value);
+    setTitleError(''); // Скидаємо помилку при введенні
+  };
+
   const handleUserChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setUserId(Number(event.target.value));
     setHasUserIdError(false);
   };
 
-  const [userTodo, setUserTodo] = useState<Todos[]>(todoInfos);
-
   const addTodo = (event: React.FormEvent) => {
     event.preventDefault();
 
+    // 2. Роздільна валідація Title для зрозумілого фідбеку
     const titleRegex = /^[A-Za-z0-9 ]+$/;
-    const titleIsEmpty = title.trim() === '' || !titleRegex.test(title);
+    let currentTitleError = '';
+
+    if (!title.trim()) {
+      currentTitleError = 'Please enter a title';
+    } else if (!titleRegex.test(title)) {
+      currentTitleError = 'Title should contain only letters and numbers';
+    }
+
     const userIdIsMissing = !userId;
 
-    setHasTitleError(titleIsEmpty);
+    setTitleError(currentTitleError);
     setHasUserIdError(userIdIsMissing);
 
-    if (titleIsEmpty || userIdIsMissing) {
+    if (currentTitleError || userIdIsMissing) {
       return;
     }
 
-    const selectedUser = usersFromServer.find(user => user.id === userId);
-
-    const nextId =
-      userTodo.reduce((maxId, todo) => {
-        return todo.id > maxId ? todo.id : maxId;
-      }, 0) + 1;
+    // Розрахунок наступного ID
+    const nextId = userTodo.length > 0
+      ? Math.max(...userTodo.map(todo => todo.id)) + 1
+      : 1;
 
     const newTodo: Todos = {
       id: nextId,
-      title,
-      userId,
+      title: title.trim(),
+      userId: userId!,
       completed: false,
-      user: {
-        id: selectedUser?.id,
-        name: selectedUser?.name,
-        username: selectedUser?.username,
-        email: selectedUser?.email,
-      },
+      user: getTodoUser(userId!), // Використовуємо хелпер
     };
 
     setUserTodo(prev => [...prev, newTodo]);
 
+    // Очищення форми
     setTitle('');
     setUserId(null);
-    setHasTitleError(false);
-    setHasUserIdError(false);
   };
 
   return (
@@ -92,15 +101,15 @@ export const App = () => {
           <input
             id="todo-title"
             className={classNames('field__input', {
-              error__field: hasTitleError,
+              'error__field': !!titleError,
             })}
             type="text"
             data-cy="titleInput"
             placeholder="Title"
             value={title}
-            onChange={event => handleTitleChange(event)}
+            onChange={handleTitleChange}
           />
-          {hasTitleError && <p className="error">Please enter a title</p>}
+          {titleError && <p className="error">{titleError}</p>}
         </div>
 
         <div className="field">
@@ -110,23 +119,19 @@ export const App = () => {
           <select
             id="todo-user"
             className={classNames('field__select', {
-              error__field: hasUserIdError,
+              'error__field': hasUserIdError,
             })}
             data-cy="userSelect"
             value={userId ?? 0}
-            onChange={event => handleUserChange(event)}
+            onChange={handleUserChange}
           >
-            <option value="0" disabled>
-              Choose a user
-            </option>
-
+            <option value="0" disabled>Choose a user</option>
             {usersFromServer.map(user => (
               <option key={user.id} value={user.id}>
                 {user.name}
               </option>
             ))}
           </select>
-
           {hasUserIdError && <p className="error">Please choose a user</p>}
         </div>
 
